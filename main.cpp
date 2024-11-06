@@ -1,6 +1,9 @@
 #include <iostream>
 #include <array>
 #include <algorithm>
+#include <vector>
+#include <fstream>
+#include <cstdint>
 
 typedef uint8_t byte;
 
@@ -215,32 +218,65 @@ void decrypt(const std::array<byte, BLOCK_SIZE>& key)
     add_round_key(0, expanded_key);
 }
 
+std::vector<byte> pad_block(const std::vector<byte>& data) 
+{
+    std::vector<byte> padded = data;
+    size_t padding_length = 16 - (data.size() % 16);
+    padded.insert(padded.end(), padding_length, static_cast<byte>(padding_length));
+    return padded;
+}
+
+std::vector<byte> aes_encrypt_file(const std::vector<byte>& input_data, const std::array<byte, BLOCK_SIZE>& key) 
+{
+    std::vector<byte> encrypted_data;
+
+    // TODO decide on padding per block and not beforehand, otherwise the entire file in memory has to be copied
+    std::vector<byte> padded_data = input_data.size() % 16 == 0 ? input_data : pad_block(input_data);
+
+    for (size_t i = 0; i < padded_data.size(); i += 16) 
+    {
+        std::array<byte, 16> block;
+        std::copy_n(padded_data.begin() + i, 16, block.begin());
+
+        state = block;
+        encrypt(key);
+        block = state;
+
+        encrypted_data.insert(encrypted_data.end(), block.begin(), block.end());
+    }
+
+    return encrypted_data;
+}
+
 int main()
 {
+    // TODO read file names and key as input
+    // TODO add flags to indicate en- or decryption
+    std::string input_filename = "input.txt";
+    std::string output_filename = "encrypted_output.bin";
     std::array<byte, BLOCK_SIZE> key = {
         0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
         0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
     };
 
-    std::array<byte, BLOCK_SIZE> plaintext = {
-        0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
-        0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34
-    };
-
-    state = plaintext;
-    encrypt(key);
-
-    std::array<byte, BLOCK_SIZE> ciphertext = state;
-    decrypt(key);
-
-    if (state == plaintext && ciphertext != plaintext) 
+    std::ifstream input_file(input_filename, std::ios::binary);
+    if (!input_file.is_open())
     {
-        std::cout << "Decryption test passed.\n";
-    } 
-    else 
-    {
-        std::cout << "Decryption test failed.\n";
+        return -1;
     }
+    // TODO read and encrypt data in chunks and don't load the entire file into memory
+    std::vector<byte> input_data((std::istreambuf_iterator<char>(input_file)), std::istreambuf_iterator<char>());
+
+    // TODO use something other than ECB mode by default
+    // TODO rework block iteration to directly write a certain amount of blocks to the output, otherwise the entire ciphertext has to be put into memory
+    std::vector<byte> encrypted_data = aes_encrypt_file(input_data, key);
+
+    std::ofstream output_file(output_filename, std::ios::binary | std::ios::trunc);
+    if (!output_file.is_open())
+    {
+        return -1;
+    }
+    output_file.write(reinterpret_cast<const char*>(encrypted_data.data()), encrypted_data.size());
 
     return 0;
 }
