@@ -42,7 +42,14 @@ const std::array<byte, 256> inv_sbox = {
     0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
 };
 
-std::array<byte, 16> state;
+const std::array<byte, 10> Rcon = {
+    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36
+};
+
+const int BLOCK_SIZE = 16;
+const int EXPANDED_BLOCK_SIZE = 176;
+
+std::array<byte, BLOCK_SIZE> state;
 
 byte galois_multiplication(byte a, byte b)
 {
@@ -56,6 +63,48 @@ byte galois_multiplication(byte a, byte b)
         b >>= 1;
     }
     return result;
+}
+
+std::array<byte, 4> rot_word(const std::array<byte, 4>& word) 
+{
+    return { word[1], word[2], word[3], word[0] };
+}
+
+std::array<byte, 4> sub_word(const std::array<byte, 4>& word) 
+{
+    return { sbox[word[0]], sbox[word[1]], sbox[word[2]], sbox[word[3]] };
+}
+
+std::array<byte, EXPANDED_BLOCK_SIZE> key_expansion(const std::array<byte, BLOCK_SIZE>& key) 
+{
+    std::array<byte, EXPANDED_BLOCK_SIZE> expanded_key = {};
+    std::copy(key.begin(), key.end(), expanded_key.begin());
+
+    int bytes_generated = 16;
+    int rcon_index = 0;
+
+    std::array<byte, 4> temp;
+
+    while (bytes_generated < EXPANDED_BLOCK_SIZE) 
+    {
+        // last 4 bytes from the currently expanded key
+        temp = { expanded_key[bytes_generated - 4], expanded_key[bytes_generated - 3],
+                 expanded_key[bytes_generated - 2], expanded_key[bytes_generated - 1] };
+
+        if (bytes_generated % 16 == 0) 
+        {
+            temp = sub_word(rot_word(temp));
+            temp[0] ^= Rcon[rcon_index++];
+        }
+
+        for (int i = 0; i < 4; ++i) 
+        {
+            expanded_key[bytes_generated] = expanded_key[bytes_generated - 16] ^ temp[i];
+            ++bytes_generated;
+        }
+    }
+
+    return expanded_key;
 }
 
 void sub_bytes()
@@ -120,54 +169,60 @@ void inv_mix_columns()
     }
 }
 
-void add_round_key(const std::array<byte, 16>& round_key)
+void add_round_key(int round, const std::array<byte, EXPANDED_BLOCK_SIZE>& expanded_key)
 {
-    for (size_t i = 0; i < state.size(); ++i) 
+    int start = round * BLOCK_SIZE;
+    for (size_t i = 0; i < BLOCK_SIZE; ++i)
     {
-        state[i] ^= round_key[i];
+        state[i] ^= expanded_key[start + i];
     }
 }
 
-void encrypt(const std::array<byte, 16>& key)
+void encrypt(const std::array<byte, BLOCK_SIZE>& key)
 {
-    add_round_key(key);
-    for (int round = 0; round < 9; ++round) 
+    auto expanded_key = key_expansion(key);
+    add_round_key(0, expanded_key);
+
+    for (int round = 1; round < 10; ++round) 
     {
         sub_bytes();
         shift_rows();
         mix_columns();
-        add_round_key(key);
+        add_round_key(round, expanded_key);
     }
+
+    // final round without mix_columns
     sub_bytes();
     shift_rows();
-    add_round_key(key);  // final round without mix_columns
+    add_round_key(10, expanded_key);
 }
 
-void decrypt(const std::array<byte, 16>& key) 
+void decrypt(const std::array<byte, BLOCK_SIZE>& key)
 {
-    add_round_key(key);
+    auto expanded_key = key_expansion(key);
+    add_round_key(10, expanded_key);
 
-    for (int round = 8; round >= 0; --round) 
+    for (int round = 9; round >= 1; --round) 
     {
         inv_shift_rows();
         inv_sub_bytes();
-        add_round_key(key);
+        add_round_key(round, expanded_key);
         inv_mix_columns();
     }
 
     inv_shift_rows();
     inv_sub_bytes();
-    add_round_key(key);
+    add_round_key(0, expanded_key);
 }
 
 int main()
 {
-    std::array<byte, 16> key = {
+    std::array<byte, BLOCK_SIZE> key = {
         0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
         0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
     };
 
-    std::array<byte, 16> plaintext = {
+    std::array<byte, BLOCK_SIZE> plaintext = {
         0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
         0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34
     };
@@ -175,7 +230,7 @@ int main()
     state = plaintext;
     encrypt(key);
 
-    std::array<byte, 16> ciphertext = state;
+    std::array<byte, BLOCK_SIZE> ciphertext = state;
     decrypt(key);
 
     if (state == plaintext && ciphertext != plaintext) 
