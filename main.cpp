@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <vector>
 #include <fstream>
-#include <cstdint>
+#include <string>
+
+#include "args_parser.hpp";
 
 typedef uint8_t byte;
 
@@ -248,21 +250,25 @@ std::vector<byte> aes_encrypt_file(const std::vector<byte>& input_data, const st
     return encrypted_data;
 }
 
-int main()
+int main(int argc, char* argv[])
 {
-    // TODO read file names and key as input
-    // TODO add flags to indicate en- or decryption
-    std::string input_filename = "input.txt";
-    std::string output_filename = "encrypted_output.bin";
+    const Arguments args = parse_args(argc, argv);
+    if (args.error)
+    {
+        std::cerr << "Usage: " << argv[0] << " -e|-d <mode> <input_file> <passphrase>\n" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    // TODO add key derivation function, for now a hardcoded key is enough
     std::array<byte, BLOCK_SIZE> key = {
         0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
         0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
     };
 
-    std::ifstream input_file(input_filename, std::ios::binary);
+    std::ifstream input_file(args.input_filename, std::ios::binary);
     if (!input_file.is_open())
     {
-        return -1;
+        return EXIT_FAILURE;
     }
     // TODO read and encrypt data in chunks and don't load the entire file into memory
     std::vector<byte> input_data((std::istreambuf_iterator<char>(input_file)), std::istreambuf_iterator<char>());
@@ -271,12 +277,12 @@ int main()
     // TODO rework block iteration to directly write a certain amount of blocks to the output, otherwise the entire ciphertext has to be put into memory
     std::vector<byte> encrypted_data = aes_encrypt_file(input_data, key);
 
-    std::ofstream output_file(output_filename, std::ios::binary | std::ios::trunc);
+    std::ofstream output_file(args.output_filename, std::ios::binary | std::ios::trunc);
     if (!output_file.is_open())
     {
-        return -1;
+        return EXIT_FAILURE;
     }
     output_file.write(reinterpret_cast<const char*>(encrypted_data.data()), encrypted_data.size());
 
-    return 0;
+    return EXIT_SUCCESS;
 }

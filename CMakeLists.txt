@@ -3,4 +3,4 @@ project(AES_128_Project)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(aes main.cpp)
+add_executable(aes main.cpp args_parser.hpp)
