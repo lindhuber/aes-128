@@ -81,7 +81,7 @@ Arguments parse_args(int argc, char* argv[])
 	}
 
 	args.input_filename = argv[3];
-	args.output_filename = args.mode == Encryption ? args.input_filename + ".enc" : strip_extension(args.input_filename);
+	args.output_filename = args.operation == Encryption ? args.input_filename + ".enc" : strip_extension(args.input_filename);
 
 	args.passphrase = argv[4];
 

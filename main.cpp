@@ -250,6 +250,35 @@ std::vector<byte> aes_encrypt_file(const std::vector<byte>& input_data, const st
     return encrypted_data;
 }
 
+std::vector<byte> aes_decrypt_file(const std::vector<byte>& input_data, const std::array<byte, BLOCK_SIZE>& key)
+{
+    std::vector<byte> decrypted_data;
+
+    for (size_t i = 0; i < input_data.size(); i += 16)
+    {
+        std::array<byte, BLOCK_SIZE> block;
+        std::copy_n(input_data.begin() + i, BLOCK_SIZE, block.begin());
+
+        state = block;
+        decrypt(key);
+        block = state;
+
+        decrypted_data.insert(decrypted_data.end(), block.begin(), block.end());
+    }
+
+    // assuming PKCS#7 padding
+    if (!decrypted_data.empty()) 
+    {
+        byte padding_length = decrypted_data.back();
+        if (padding_length > 0 && padding_length <= BLOCK_SIZE) 
+        {
+            decrypted_data.resize(decrypted_data.size() - padding_length);
+        }
+    }
+
+    return decrypted_data;
+}
+
 int main(int argc, char* argv[])
 {
     const Arguments args = parse_args(argc, argv);
@@ -275,14 +304,14 @@ int main(int argc, char* argv[])
 
     // TODO use something other than ECB mode by default
     // TODO rework block iteration to directly write a certain amount of blocks to the output, otherwise the entire ciphertext has to be put into memory
-    std::vector<byte> encrypted_data = aes_encrypt_file(input_data, key);
+    std::vector<byte> data = args.operation == Encryption ? aes_encrypt_file(input_data, key) : aes_decrypt_file(input_data, key);
 
     std::ofstream output_file(args.output_filename, std::ios::binary | std::ios::trunc);
     if (!output_file.is_open())
     {
         return EXIT_FAILURE;
     }
-    output_file.write(reinterpret_cast<const char*>(encrypted_data.data()), encrypted_data.size());
+    output_file.write(reinterpret_cast<const char*>(data.data()), data.size());
 
     return EXIT_SUCCESS;
 }
